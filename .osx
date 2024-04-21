@@ -141,7 +141,7 @@ osascript -e 'tell application "System Preferences" to quit'
 # Show script menu in menu bar
 osascript <<EOT
  tell application "AppleScript Utility"
-    set Script menu enabled to true 
+    set Script menu enabled to false 
     set application scripts position to top -- top or bottom 
     set show Computer scripts to false -- true or false 
 end tell
@@ -151,25 +151,19 @@ EOT
 # *                     DOCK
 #================================================
 
-if [[ "$osx_hardware_model_is_vm" = true ]] ; then
-    ## If running from virtual machine I like to position the Dock on the bottom
-    defaults write com.apple.dock orientation bottom #default, my preference for a VM
-else
-    ## Otherwise I prefer to position the Dock on the right
-    defaults write com.apple.dock orientation right #my preference for main machine
-fi
+## I prefer to position the Dock on the right
+defaults write com.apple.dock orientation right #my preference for main machine
 
 ## Set the icon size of Dock items to 30 pixels
 defaults write com.apple.dock tilesize -int 30
-# defaults write com.apple.dock tilesize -int ??
 
 
 #================================================
 # *                   SCREEN
 #================================================
 
-# Save screenshots to Downloads folder.
-defaults write com.apple.screencapture location -string "${HOME}/Downloads"
+# Save screenshots to Pictures folder.
+defaults write com.apple.screencapture location -string "${HOME}/Pictures"
 
 # Save screenshots in PNG format (other options: BMP, GIF, JPG, PDF, TIFF)
 defaults write com.apple.screencapture type -string "png"
@@ -216,7 +210,7 @@ defaults write com.apple.finder EmptyTrashSecurely -bool false
 
 # Visibility of hidden files (default: false)
 # I lately use `⌘-.` to switch between showing hidden files manually
-# defaults write com.apple.finder AppleShowAllFiles -bool true
+defaults write com.apple.finder AppleShowAllFiles -bool true
 
 # Filename extensions (default: false)
 # See my applescript for showing and hiding extensions
