@@ -1,0 +1,7 @@
+[user]
+	name = Maximilian Stadtmüller
+	email = maximilian.stadtmueller@staddi99.com
+[core]
+	editor = nano
+[init]
+	defaultBranch = main
