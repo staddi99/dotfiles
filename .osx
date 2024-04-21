@@ -483,4 +483,4 @@ do
 done
 
 sleep 2
-open -a Safari
+# open -a Safari
