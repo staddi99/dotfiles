@@ -55,11 +55,8 @@ fi
 
 # Which version and build of macOS are we executing under?		
 
-read osx_product_version osx_vers_major osx_vers_minor osx_vers_patch \		
-    <<< $(sw_vers -productVersion | awk -F. '{print $0 " " $1 " " $2 " " $3}')		
+read osx_product_version osx_vers_major osx_vers_minor osx_vers_patch <<< $(sw_vers -productVersion | awk -F. '{print $0 " " $1 " " $2 " " $3}')
 osx_build_version="$(sw_vers -buildVersion)"		
-
-printf "Running $osx_distro inside of $osx_hardware_model.\n"		
 
 # What is the human-readable codename for this macOS?		
 
