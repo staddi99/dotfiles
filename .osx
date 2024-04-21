@@ -1,0 +1,489 @@
+#!/usr/bin/env zsh
+
+#===========================================================================
+#  *                                 INFO
+#    
+# macOS Preferences Defaults
+# By Christopher Allen @ChristopherA https://github.com/christophera/
+
+# My most basic macOS preferences, in this gist to make it easy to load on
+# multiple machines and VMs. Ideally runs on all macOS versions since Yosemite,
+# but only tested recently with macOS Catalina 10.6 though Monterey 12.4.
+
+## TBD: Initial macOS Sonoma 14.0 testing.
+## WARNING: Initial tests with macOS Sonoma 14.0 have a lot of failures, mostly
+## with the approaches used request access. If you answer yes to all the
+## errors will still occur, but you can run the script multiple times and it
+## will eventually set most of them. 
+
+# As a convenience for bootstrapping, you can execute this script remotely,
+# which will update your a Mac with all these settings using `curl`, which will
+# not leave itself on your system (ideally a newly installed Mac system). Just
+# paste the following command into the Terminal  (`⌘␣Terminal`):
+
+# curl -L https://gist.githubusercontent.com/ChristopherA/98628f8cd00c94f11ee6035d53b0d3c6/raw/macOS-Preferences-Defaults.sh | bash
+
+# ! WARNING: Be cautious whenever someone asks you to run a script that has
+# ! `curl` command in it, because if the author is malicious they can corrupt
+# ! your system or make it vulnerable. In this case the script is run from a
+# ! trusted website (`gist.githubusercontent.com/`), and is from my account
+# ! (`ChristopherA`). Make sure you look at the script the URL refers to and
+# ! confirm the URL is the same as you pasted into the Terminal, before hitting
+# ! return!
+
+# Much of this script is inspired by from Mathias Bynens' famous ~/.osx —
+# https://mths.be/osx - https://github.com/mathiasbynens/dotfiles
+
+#===========================================================================
+
+#================================================
+# *                TEST ENVIROMENT
+#================================================
+
+# Mac Hardware Model
+osx_hardware_model=$(sysctl -n hw.model)		
+
+# VMware detection. Used to set VMware specific preferences.		
+if [ ! -z "$(echo $osx_hardware_model | grep VMware)" ] || [ ! -z "$(echo $osx_hardware_model | grep VirtualMac)" ]; then		
+    osx_hardware_model_is_vm = true		
+    # else		
+    #   printf "This macOS is NOT running in a Virtual Machine. ABORT\n"		
+    #   exit 1		
+fi		
+
+
+
+# Which version and build of macOS are we executing under?		
+
+read osx_product_version osx_vers_major osx_vers_minor osx_vers_patch \		
+    <<< $(sw_vers -productVersion | awk -F. '{print $0 " " $1 " " $2 " " $3}')		
+osx_build_version="$(sw_vers -buildVersion)"		
+
+printf "Running $osx_distro inside of $osx_hardware_model.\n"		
+
+# What is the human-readable codename for this macOS?		
+
+case "$osx_product_version" in		
+"10.4"*) osx_codename="Mac OS X Tiger" ;;		
+"10.5"*) osx_codename="Mac OS X Leopard" ;;		
+"10.6"*) osx_codename="Mac OS X Snow Leopard" ;;		
+"10.7"*) osx_codename="Mac OS X Lion" ;;		
+"10.8"*) osx_codename="OS X Mountain Lion" ;;		
+"10.9"*) osx_codename="OS X Mavericks" ;;		
+"10.10"*) osx_codename="OS X Yosemite" ;;		
+"10.11"*) osx_codename="OS X El Capitan" ;;		
+"10.12"*) osx_codename="macOS Sierra" ;;		
+"10.13"*) osx_codename="macOS High Sierra" ;;		
+"10.14"*) osx_codename="macOS Mojave" ;;		
+"10.15"*) osx_codename="macOS Catalina" ;;		
+"11."*) osx_codename="macOS Big Sur" ;;		
+"12."*) osx_codename="macOS Monterey" ;;
+"13."*) osx_codename="macOS Ventura" ;;
+"14."*) osx_codename="macOS Sonoma" ;;
+*) osx_codename="macOS" ;;		
+esac		
+
+osx_distro="$osx_codename $osx_product_version ($osx_build_version)"		
+
+printf "Running $osx_distro inside of $osx_hardware_model.\n"		
+
+#================================================		
+# *      TEST TERMINAL FOR FULL DISK ACCESS		
+#================================================		
+
+
+# Test if Terminal has Full Disk Access, and if it doesn't, prompt user to set		
+# it and start over.		
+# ? A number of preferences now require Terminal.app to have Full		
+# ? Disk Access, in particular Safari.app.		
+# ? https://lapcatsoftware.com/articles/containers.html		
+# TODO: Wrap with $osx_product_version tests		
+
+printf "Testing for Full Disk Access:\n\n"		
+errstr=$( /bin/ls /Users/admin/Library/Containers/com.apple.Safari 3>&1 1>&2 2>&3 3>&- )		
+# ? Full disk access has only been in since Mojave, but which files were protected first?		
+# TODO: Research if there is an older file to test. 		
+
+if [[ $errstr == *"Operation not permitted" ]]; then		
+   printf "Terminal.app needs Full Disk Access permission\n"		
+
+    # Prompt user to give Terminal Full Disk Access		
+    # ! This worked earlier in VMware Montery, but failed on M1 MacBook Pro (14-inch 2021)		
+    # TODO: Investigate		
+
+    osascript   -e "tell application \"System Preferences\" to activate " \
+                -e "tell application \"System Preferences\" to reveal anchor \"Privacy_AllFiles\" of pane id \"com.apple.preference.security\" " \
+                -e "display dialog \"Before continuing:\n\nUnlock and check the box next to Terminal to give it full disk access.\n\nThen quit Terminal and run this script again.\" buttons {\"OK\"} default button 1 with icon caution "
+    exit # as we can't proceed until Terminal has been granted full Disk Access
+else
+   printf "Terminal.app has permission to continue\n"
+fi
+
+#================================================
+# *           CLOSE SYSTEM PREFERENCES
+#================================================
+
+# Close any open System Preferences panes, to prevent them from overriding
+# settings we’re about to change
+osascript -e 'tell application "System Preferences" to quit'
+
+#================================================
+# *                SYSTEMUISERVER
+#================================================
+
+# from https://gist.github.com/AndrewWCarson/d4e2e1e601b759c19553fec2310433e2
+# for user in $(dscl . list /Users UniqueID | awk '$2 >= 500 {print $1}'); do
+#     userHome=$(dscl . read /Users/"$user" NFSHomeDirectory | sed 's/NFSHomeDirectory://' | grep "/" | sed 's/^[ \t]*//')
+#     if [ "$(defaults read "${userHome}/Library/Preferences/com.apple.systemuiserver.plist" 2> /dev/null | grep -i user.menu)" == "" ]; then
+#         touch "${userHome}/Library/Preferences/com.apple.systemuiserver.plist"
+#         defaults write "${userHome}/Library/Preferences/com.apple.systemuiserver.plist" menuExtras -array-add '<string>/System/Library/CoreServices/Menu Extras/User.menu</string>'
+#     fi
+# done
+# defaults write /Library/Preferences/.GlobalPreferences MultipleSessionEnabled -bool Yes
+
+# Show script menu in menu bar
+osascript <<EOT
+ tell application "AppleScript Utility"
+    set Script menu enabled to true 
+    set application scripts position to top -- top or bottom 
+    set show Computer scripts to false -- true or false 
+end tell
+EOT
+
+#================================================
+# *                     DOCK
+#================================================
+
+if [[ "$osx_hardware_model_is_vm" = true ]] ; then
+    ## If running from virtual machine I like to position the Dock on the bottom
+    defaults write com.apple.dock orientation bottom #default, my preference for a VM
+else
+    ## Otherwise I prefer to position the Dock on the right
+    defaults write com.apple.dock orientation right #my preference for main machine
+fi
+
+## Set the icon size of Dock items to 30 pixels
+defaults write com.apple.dock tilesize -int 30
+# defaults write com.apple.dock tilesize -int ??
+
+
+#================================================
+# *                   SCREEN
+#================================================
+
+# Save screenshots to Downloads folder.
+defaults write com.apple.screencapture location -string "${HOME}/Downloads"
+
+# Save screenshots in PNG format (other options: BMP, GIF, JPG, PDF, TIFF)
+defaults write com.apple.screencapture type -string "png"
+
+# Disable shadow in screenshots
+defaults write com.apple.screencapture disable-shadow -bool true
+
+
+#================================================
+# *               FINDER GENERAL
+#================================================
+
+# Disable Window animations and Get Info animations (default: false)
+# defaults write com.apple.finder DisableAllAnimations -bool true
+
+# File extension change warning
+defaults write com.apple.finder FXEnableExtensionChangeWarning -bool false
+
+# Writing of .DS_Store files on network or USB volumes
+defaults write com.apple.desktopservices DSDontWriteUSBStores -bool true
+
+# Disk image verification
+defaults write com.apple.frameworks.diskimages skip-verify        -bool true
+defaults write com.apple.frameworks.diskimages skip-verify-locked -bool true
+defaults write com.apple.frameworks.diskimages skip-verify-remote -bool true
+
+# Automatically open a new Finder window when a volume is mounted
+defaults write com.apple.frameworks.diskimages auto-open-ro-root -bool false
+defaults write com.apple.frameworks.diskimages auto-open-rw-root -bool false
+defaults write com.apple.finder OpenWindowForNewRemovableDisk    -bool false
+
+# AirDrop over Ethernet and on unsupported Macs running Lion
+defaults write com.apple.NetworkBrowser BrowseAllInterfaces -bool true
+
+# Warning before emptying Trash
+defaults write com.apple.finder WarnOnEmptyTrash -bool false
+
+# Empty Trash securely
+defaults write com.apple.finder EmptyTrashSecurely -bool false
+
+#================================================
+# *               FINDER WINDOWS
+#================================================
+
+# Visibility of hidden files (default: false)
+# I lately use `⌘-.` to switch between showing hidden files manually
+# defaults write com.apple.finder AppleShowAllFiles -bool true
+
+# Filename extensions (default: false)
+# See my applescript for showing and hiding extensions
+defaults write NSGlobalDomain AppleShowAllExtensions -bool true
+
+# Status bar (default: false)
+defaults write com.apple.finder ShowStatusBar -bool true
+
+# Full POSIX path as window title
+defaults write com.apple.finder _FXShowPosixPathInTitle -bool false
+
+# Path bar
+defaults write com.apple.finder ShowPathbar -bool true
+
+# Text selection in Quick Look
+defaults write com.apple.finder QLEnableTextSelection -bool true
+
+# Search scope
+# This Mac       : `SCev`
+# Current Folder : `SCcf`
+# Previous Scope : `SCsp`
+# I prefer current folder
+defaults write com.apple.finder FXDefaultSearchScope -string "SCcf" 
+
+# Arrange by
+# Kind, Name, Application, Date Last Opened,
+# Date Added, Date Modified, Date Created, Size, Tags, None
+defaults write com.apple.finder FXPreferredGroupBy -string "Name"
+
+# Spring loaded directories
+defaults write NSGlobalDomain com.apple.springing.enabled -bool true
+
+# Delay for spring loaded directories
+defaults write NSGlobalDomain com.apple.springing.delay -float 0.3
+
+# Preferred view style
+# Icon View   : `icnv`
+# List View   : `Nlsv`
+# Column View : `clmv`
+# Cover Flow  : `Flwv`
+defaults write com.apple.finder FXPreferredViewStyle -string "Nlsv"
+
+# After configuring preferred view style, clear all `.DS_Store` files
+# to ensure settings are applied for every directory
+find . -name '.DS_Store' -type f -delete
+
+# Keep folders on top when sorting by name
+defaults write com.apple.finder _FXSortFoldersFirst -bool true
+
+# View Options
+# ! This no longer works in Monterey 12.0.1
+# ColumnShowIcons    : Show preview column
+# ShowPreview        : Show icons
+# ShowIconThumbnails : Show icon preview
+# ArrangeBy          : Sort by
+#   dnam : Name
+#   kipl : Kind
+#   ludt : Date Last Opened
+#   pAdd : Date Added
+#   modd : Date Modified
+#   ascd : Date Created
+#   logs : Size
+#   labl : Tags
+# /usr/libexec/PlistBuddy \
+#     -c "Set :StandardViewOptions:ColumnViewOptions:ColumnShowIcons bool    false" \
+#     -c "Set :StandardViewOptions:ColumnViewOptions:FontSize        integer 11"    \
+#     -c "Set :StandardViewOptions:ColumnViewOptions:ShowPreview     bool    true"  \
+#     -c "Set :StandardViewOptions:ColumnViewOptions:ArrangeBy       string  dnam"  \
+#     ~/Library/Preferences/com.apple.finder.plist
+
+# New window target
+# Computer     : `PfCm`
+# Volume       : `PfVo`
+# $HOME        : `PfHm`
+# Desktop      : `PfDe`
+# Documents    : `PfDo`
+# All My Files : `PfAF`
+# Other…       : `PfLo`
+defaults write com.apple.finder NewWindowTarget -string 'PfHm'
+#defaults write com.apple.finder NewWindowTargetPath -string "file://${HOME}/"
+
+# Expand the following File Info panes:
+# “General”, “Open with”, and “Sharing & Permissions”
+defaults write com.apple.finder FXInfoPanesExpanded -dict \
+    General -bool true \
+    OpenWith -bool true \
+    Privileges -bool true
+
+# show full POSIX path as Finder window title, default false
+defaults write com.apple.finder _FXShowPosixPathInTitle -bool false
+
+# show status bar in Finder windows
+defaults write com.apple.finder ShowStatusBar -bool true
+
+# show path bar in Finder windows
+defaults write com.apple.finder ShowPathbar -bool true
+## later versions use "ShowPathbar"
+
+#================================================
+# *              FINDER SIDE BAR
+#================================================
+
+# size of Finder sidebar icons, small=1, default=2, large=3
+# (TBD: maybe for Catalina 10.15+ only?)
+defaults write NSGlobalDomain "NSTableViewDefaultSizeMode" -int "1" 
+
+#================================================
+# *              FINDER DESKTOP
+#================================================
+
+# Desktop Enabled
+defaults write com.apple.finder CreateDesktop -bool true
+
+# Quitting via ⌘ + Q; doing so will also hide desktop icons
+# defaults write com.apple.finder QuitMenuItem -bool true
+
+# Icons for hard drives, servers, and removable media on the desktop (default: false)
+defaults write com.apple.finder ShowExternalHardDrivesOnDesktop -bool false
+defaults write com.apple.finder ShowHardDrivesOnDesktop         -bool false
+defaults write com.apple.finder ShowMountedServersOnDesktop     -bool false
+defaults write com.apple.finder ShowRemovableMediaOnDesktop     -bool false
+
+# Size of icons on the desktop and in other icon views (default: 64)
+/usr/libexec/PlistBuddy -c "Set :DesktopViewSettings:IconViewSettings:iconSize 32" ~/Library/Preferences/com.apple.finder.plist
+/usr/libexec/PlistBuddy -c "Set :FK_StandardViewSettings:IconViewSettings:iconSize 64" ~/Library/Preferences/com.apple.finder.plist
+/usr/libexec/PlistBuddy -c "Set :StandardViewSettings:IconViewSettings:iconSize 64" ~/Library/Preferences/com.apple.finder.plist
+
+# Grid spacing for icons on the desktop and in other icon views (default: 54)
+/usr/libexec/PlistBuddy -c "Set :DesktopViewSettings:IconViewSettings:gridSpacing 54" ~/Library/Preferences/com.apple.finder.plist
+/usr/libexec/PlistBuddy -c "Set :FK_StandardViewSettings:IconViewSettings:gridSpacing 54" ~/Library/Preferences/com.apple.finder.plist
+/usr/libexec/PlistBuddy -c "Set :StandardViewSettings:IconViewSettings:gridSpacing 54" ~/Library/Preferences/com.apple.finder.plist
+
+# Show item info near icons on the desktop and in other icon views (default: false)
+/usr/libexec/PlistBuddy -c "Set :DesktopViewSettings:IconViewSettings:showItemInfo false" ~/Library/Preferences/com.apple.finder.plist
+/usr/libexec/PlistBuddy -c "Set :FK_StandardViewSettings:IconViewSettings:showItemInfo false" ~/Library/Preferences/com.apple.finder.plist
+/usr/libexec/PlistBuddy -c "Set :StandardViewSettings:IconViewSettings:showItemInfo false" ~/Library/Preferences/com.apple.finder.plist
+
+# Show item info about the icons on the desktop (default: false)
+/usr/libexec/PlistBuddy -c "Set DesktopViewSettings:IconViewSettings:labelOnBottom false" ~/Library/Preferences/com.apple.finder.plist
+
+# Enable snap-to-grid for icons on the desktop and in other icon views
+/usr/libexec/PlistBuddy -c "Set :DesktopViewSettings:IconViewSettings:arrangeBy kind" ~/Library/Preferences/com.apple.finder.plist
+/usr/libexec/PlistBuddy -c "Set :FK_StandardViewSettings:IconViewSettings:arrangeBy kind" ~/Library/Preferences/com.apple.finder.plist
+/usr/libexec/PlistBuddy -c "Set :StandardViewSettings:IconViewSettings:arrangeBy kind" ~/Library/Preferences/com.apple.finder.plist
+
+#================================================
+# *             FILEVIEWER DIALOG
+#================================================
+
+# by default iCloud Documents are the default directory opened in the fileviewer dialog when saving a new document
+# "true" to default to iCloud, false to default to home directory
+# (TBD: maybe for Catalina 10.15+ only?)
+defaults write NSGlobalDomain "NSDocumentSaveNewDocumentsToCloud" -bool "false" 
+
+#================================================
+# *                 HOT CORNERS
+#================================================
+# Hot corners
+# Possible values:
+#  0: no-op
+#  2: Mission Control
+#  3: Show application windows
+#  4: Desktop
+#  5: Start screen saver
+#  6: Disable screen saver
+#  7: Dashboard
+# 10: Put display to sleep
+# 11: Launchpad
+# 12: Notification Center
+
+# Top left screen corner → Nothing
+defaults write com.apple.dock wvous-tl-corner -int 0 # no-op
+defaults write com.apple.dock wvous-tl-modifier -int 0
+
+# Top right screen corner → Nothing
+defaults write com.apple.dock wvous-tr-corner -int 0 # no-op
+defaults write com.apple.dock wvous-tr-modifier -int 0
+
+# Bottom left screen corner → Nothing
+defaults write com.apple.dock wvous-bl-corner -int 0 # no-op
+defaults write com.apple.dock wvous-bl-modifier -int 0
+
+# Bottom right screen corner → Nothing
+defaults write com.apple.dock wvous-br-corner -int 0 # no-op
+defaults write com.apple.dock wvous-br-modifier -int 0
+
+
+#================================================
+# *                   SAFARI
+#================================================
+
+# ? NOTE: Many of these don't work anymore, and those that do require Terminal
+# ? to have Full Disk Access (which is tested and set above).
+# ? https://lapcatsoftware.com/articles/containers.html
+# TODO: test each setting if works in Monterey & Big Sur.
+
+# Delete the old redundant .plist file, the correct location is
+# ~/Library/Containers/com.apple.Safari since Safari 13 in Catalina 10.15
+
+# Get Safari Version
+read osx_safari_version osx_safari_version_major osx_safari_version_minor osx_safari_version_patch \
+    <<< $(/usr/libexec/PlistBuddy -c "print :CFBundleShortVersionString" \
+    /Applications/Safari.app/Contents/Info.plist | \
+    awk -F. '{print $0 " " $1 " " $2 " " $3}')
+
+# If Safari 13 or greater, delete outdated redundant pref file from earlier Safari
+if [[ -f ~/Library/Preferences/com.apple.Safari.plist && "$osx_safari_version_major" -ge 13 ]]; then
+    rm ~/Library/Preferences/com.apple.Safari.plist
+fi
+
+# Show status bar
+# defaults write com.apple.Safari ShowStatusBar -bool true
+# ! Doesn't seem to work Safari 15 on macOS Monterey
+
+# Show hovering overlay on links
+defaults write com.apple.Safari ShowOverlayStatusBar -bool true #default is false
+# * [x] Does work in Safari 15 on macOS Monterey
+
+# Safari opens with: last session
+defaults write com.apple.Safari AlwaysRestoreSessionAtLaunch -bool true
+# * [x] Does work in Safari 15 on macOS Monterey
+# * [x] Does work in Safari 14.1.2 on macOS Mojave 10.14.6
+
+# Set Safari’s home page to `about:blank` for faster loading
+# defaults write com.apple.Safari HomePage -string "about:blank"
+# ! Doesn't seem to work Safari 15 on macOS Monterey
+# ? [ ] Set manually
+
+# Don't open files in Safari after downloading:
+defaults write com.apple.Safari AutoOpenSafeDownloads -bool false
+# * [x] Does work in Safari 15 on macOS Monterey
+
+# Show Develop menu in Safari
+# defaults write com.apple.Safari IncludeDevelopMenu -bool true
+# ! Doesn't seem to work Safari 15 on macOS Monterey, as it is now Debug
+# TODO wrap these to test safari version
+
+# Enable Safari’s Debug menu
+defaults write com.apple.Safari IncludeInternalDebugMenu -bool true
+# * [x] Does work in Safari 15 on macOS Monterey
+
+#================================================
+# *                 SCRIPT MENU
+#================================================
+
+#Enable Script Menu (scripts in ~/Library/Scripts/ will be listed in menu bar)
+
+defaults write com.apple.scriptmenu.plist ScriptMenuEnabled true
+
+#================================================
+# *          KILL AFFECTED APPLICATIONS
+#================================================
+
+# echo "Kill all affected actions, press any key..."
+# read KEY
+# ? This only works in interactive mode, not in `curl`.
+# TODO: puzzle out a solution for use with `curl` 
+
+for app in "SystemUIServer" "cfprefsd" \
+           "Finder" "Dock" "Safari" \
+           # "Terminal" \
+do
+    killall "${app}" > /dev/null 2>&1
+done
+
+sleep 2
+open -a Safari
